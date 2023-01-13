@@ -1,0 +1,20 @@
+[tool.poetry]
+name = "hexlet-code"
+version = "0.1.0"
+description = "page analyzer"
+authors = ["Sergei Demchenko <hb13718@gmail.com>"]
+packages = [
+  { include = "page_analyzer" },
+]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+Flask = "^2.2.2"
+gunicorn = "^20.1.0"
+
+[tool.poetry.dev-dependencies]
+flake8 = "^6.0.0"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
