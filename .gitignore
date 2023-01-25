@@ -4,5 +4,4 @@
 .python-version
 __pycache__
 dist/
-asciinema_demo/
-
+.env

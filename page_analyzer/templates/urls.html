@@ -1,0 +1,40 @@
+{% extends 'layout.html' %}
+
+{% block title %}
+  Анализатор страниц
+{% endblock %}
+
+{% block main %}
+
+<div class="flex-grow-1">
+  <div class="container-lg mt-3">
+    <h1>Сайты</h1>
+
+    <div class="table-responsive">
+      <table class="table table-bordered table-hover text-nowrap" data-test="urls">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Имя</th>
+            <th>Последняя проверка</th>
+            <th>Код ответа</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if items %}
+            {% for item in items %}
+            <tr>
+              <td>{{ item.id }}</td>
+              <td>{{ item.name }}</td>
+              <td>{{ item.last_check if item.last_check is not none }}</td>
+              <td>{{ item.code_response if item.code_response is not none }}</td>
+            </tr>
+            {% endfor %}
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
