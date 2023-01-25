@@ -1,12 +1,12 @@
-from flask import Flask, render_template, flash, redirect, url_for, session, request, logging, g, get_flashed_messages
+from flask import Flask, render_template, flash, redirect
+from flask import url_for, request, g, get_flashed_messages
+from psycopg2.extras import NamedTupleCursor
 import validators
 from dotenv import load_dotenv
 import psycopg2
 import os
 from datetime import datetime
 from urllib.parse import urlparse
-from psycopg2.extras import NamedTupleCursor
-
 
 load_dotenv()
 
@@ -50,7 +50,12 @@ def get_url_errors(url: str) -> list:
 
 def normalize_url(url: str) -> str:
     parsed_url = urlparse(url)
-    return parsed_url._replace(path='', params='', query='', fragment='').geturl()
+    return parsed_url._replace(
+        path='',
+        params='',
+        query='',
+        fragment=''
+    ).geturl()
 
 
 @app.route('/')
@@ -60,16 +65,22 @@ def index():
 
 @app.get('/urls')
 def get_urls():
+    query_db = (
+        'SELECT '
+        'urls.id AS id, '
+        'urls.name AS name, '
+        'url_checks.created_at '
+        'AS last_check, code_response '
+        'FROM urls '
+        'LEFT JOIN url_checks '
+        'ON urls.id = url_checks.url_id '
+        'AND url_checks.id = ('
+        'SELECT max(id) FROM url_checks WHERE urls.id = url_checks.url_id) '
+        'ORDER BY urls.id DESC;'
+    )
     with get_db() as db:
         with db.cursor(cursor_factory=NamedTupleCursor) as cursor:
-            cursor.execute(
-                'SELECT urls.id AS id, urls.name AS name, url_checks.created_at AS last_check, code_response '
-                'FROM urls '
-                'LEFT JOIN url_checks '
-                'ON urls.id = url_checks.url_id '
-                'AND url_checks.id = (SELECT max(id) FROM url_checks WHERE urls.id = url_checks.url_id) '
-                'ORDER BY urls.id DESC;'
-                )
+            cursor.execute(query_db)
             data = cursor.fetchall()
     db.close()
     return render_template('urls.html', items=data)
@@ -87,22 +98,23 @@ def post_url():
             'index.html',
             url=url,
             messages=messages
-            ), 422
+        ), 422
 
     url = normalize_url(url)
-    with get_db() as db:
-        with db.cursor(cursor_factory=NamedTupleCursor) as cursor:
+    db = get_db()
+    with db.cursor(cursor_factory=NamedTupleCursor) as cursor:
+        cursor.execute('SELECT * FROM urls WHERE name=(%s)', (url,))
+        current_url = cursor.fetchone()
+        if current_url:
+            flash('Страница уже существует', 'alert-info')
+            url_id = current_url.id
+        else:
+            cursor.execute('INSERT INTO urls (name, created_at) '
+                           'VALUES (%s, %s)',
+                           (url, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
             cursor.execute('SELECT * FROM urls WHERE name=(%s)', (url,))
-            current_url = cursor.fetchone()
-            if current_url:
-                flash('Страница уже существует', 'alert-info')
-                url_id = current_url.id
-            else:
-                cursor.execute('INSERT INTO urls (name, created_at) VALUES (%s, %s)',
-                               (url, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
-                cursor.execute('SELECT * FROM urls WHERE name=(%s)', (url,))
-                url_id = cursor.fetchone().id
-                flash('Страница успешно добавлена', 'alert-success')
+            url_id = cursor.fetchone().id
+            flash('Страница успешно добавлена', 'alert-success')
     db.close()
     return redirect(url_for('url_info', id=url_id)), 301
 
@@ -113,7 +125,10 @@ def url_info(id):
         with db.cursor(cursor_factory=NamedTupleCursor) as cursor:
             cursor.execute('SELECT * FROM urls WHERE id=(%s)', (id,))
             url_info = cursor.fetchone()
-            cursor.execute('SELECT * FROM url_checks WHERE url_id=(%s) ORDER BY id DESC', (id,))
+            cursor.execute('SELECT * '
+                           'FROM url_checks '
+                           'WHERE url_id=(%s) '
+                           'ORDER BY id DESC', (id,))
             url_check = cursor.fetchone()
 
     db.close()
@@ -123,7 +138,7 @@ def url_info(id):
         url_info=url_info,
         url_check=url_check,
         messages=messages
-        )
+    )
 
 
 @app.post('/url/int: <id>/checks')
