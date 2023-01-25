@@ -1,4 +1,4 @@
-from flask import Flask, render_template, flash, redirect
+from flask import Flask, render_template, flash, redirect, abort
 from flask import url_for, request, g, get_flashed_messages
 from psycopg2.extras import NamedTupleCursor
 import validators
@@ -115,6 +115,7 @@ def post_url():
             cursor.execute('SELECT * FROM urls WHERE name=(%s)', (url,))
             url_id = cursor.fetchone().id
             flash('Страница успешно добавлена', 'alert-success')
+    db.commit()
     db.close()
     return redirect(url_for('url_info', id=url_id)), 301
 
@@ -124,24 +125,27 @@ def url_info(id):
     with get_db() as db:
         with db.cursor(cursor_factory=NamedTupleCursor) as cursor:
             cursor.execute('SELECT * FROM urls WHERE id=(%s)', (id,))
-            url_info = cursor.fetchone()
+            url = cursor.fetchone()
+            if not url:
+                abort(404)
+
             cursor.execute('SELECT * '
                            'FROM url_checks '
                            'WHERE url_id=(%s) '
                            'ORDER BY id DESC', (id,))
-            url_check = cursor.fetchone()
+            check = cursor.fetchone()
 
     db.close()
     messages = get_flashed_messages(with_categories=True)
     return render_template(
         'url_info.html',
-        url_info=url_info,
-        url_check=url_check,
+        url_info=url,
+        url_check=check,
         messages=messages
     )
 
 
-@app.post('/url/int: <id>/checks')
+@app.post('/url/<int:id>/checks')
 def url_check(id):
     return redirect(url_for('url_info', id=id))
 
