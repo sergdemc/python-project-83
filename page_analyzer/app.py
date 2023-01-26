@@ -69,8 +69,8 @@ def get_urls():
         'SELECT '
         'urls.id AS id, '
         'urls.name AS name, '
-        'url_checks.created_at '
-        'AS last_check, code_response '
+        'url_checks.created_at AS last_check, '
+        'status_code '
         'FROM urls '
         'LEFT JOIN url_checks '
         'ON urls.id = url_checks.url_id '
@@ -111,7 +111,8 @@ def post_url():
         else:
             cursor.execute('INSERT INTO urls (name, created_at) '
                            'VALUES (%s, %s)',
-                           (url, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+                           (url, datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+                           )
             cursor.execute('SELECT * FROM urls WHERE name=(%s)', (url,))
             url_id = cursor.fetchone().id
             flash('Страница успешно добавлена', 'alert-success')
@@ -133,20 +134,29 @@ def url_info(id):
                            'FROM url_checks '
                            'WHERE url_id=(%s) '
                            'ORDER BY id DESC', (id,))
-            check = cursor.fetchone()
+            checks = cursor.fetchall()
 
     db.close()
     messages = get_flashed_messages(with_categories=True)
     return render_template(
         'url_info.html',
-        url_info=url,
-        url_check=check,
+        url=url,
+        checks=checks,
         messages=messages
     )
 
 
 @app.post('/url/<int:id>/checks')
-def url_check(id):
+def url_checks(id):
+    with get_db() as db:
+        with db.cursor() as cursor:
+            cursor.execute(
+                'INSERT INTO url_checks '
+                '(url_id, created_at) '
+                'VALUES (%s, %s)',
+                (id, datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+            )
+    db.close()
     return redirect(url_for('url_info', id=id))
 
 

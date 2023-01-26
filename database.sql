@@ -10,7 +10,7 @@ created_at DATE
 CREATE TABLE url_checks (
 id bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
 url_id bigint REFERENCES urls(id) ON DELETE CASCADE,
-code_response bigint,
+status_code bigint,
 h1 VARCHAR(255),
 title VARCHAR(255),
 description VARCHAR(255),
