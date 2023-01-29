@@ -27,7 +27,7 @@
               <td>{{ item.id }}</td>
               <td>{{ item.name }}</td>
               <td>{{ item.last_check if item.last_check is not none }}</td>
-              <td>{{ item.code_response if item.code_response is not none }}</td>
+              <td>{{ item.status_code if item.status_code is not none }}</td>
             </tr>
             {% endfor %}
           {% endif %}

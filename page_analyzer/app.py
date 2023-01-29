@@ -1,12 +1,16 @@
-from flask import Flask, render_template, flash, redirect, abort
-from flask import url_for, request, g, get_flashed_messages
+from flask import Flask, render_template, flash, redirect, abort,\
+    url_for, request, g, get_flashed_messages
 from psycopg2.extras import NamedTupleCursor
-import validators
-from dotenv import load_dotenv
-import psycopg2
-import os
-from datetime import datetime
 from urllib.parse import urlparse
+from dotenv import load_dotenv
+from datetime import datetime
+from bs4 import BeautifulSoup
+
+import psycopg2
+import validators
+import os
+import requests
+
 
 load_dotenv()
 
@@ -19,25 +23,34 @@ app.config.from_object(__name__)
 
 
 def connect_db():
+    """Opens DB connection and returns it"""
+
     conn = psycopg2.connect(app.config['DATABASE_URL'])
     return conn
 
 
 def create_db():
-    db = connect_db()
-    with app.open_resource('database.sql', mode='r') as f:
-        db.cursor().execute(f.read())
-    db.commit()
-    db.close()
+    """Additional function for creating tables in DB using database.sql file"""
+
+    with app.app_context():
+        db = connect_db()
+        with app.open_resource('database.sql', mode='r') as sql_file:
+            db.cursor().execute(sql_file.read())
+        db.commit()
+        db.close()
 
 
 def get_db():
+    """Creates DB connection if it hasn't already been made"""
+
     if not hasattr(g, 'link_db'):
         g.link_db = connect_db()
     return g.link_db
 
 
-def get_url_errors(url: str) -> list:
+def validate_url(url: str) -> list:
+    """Validates url and returns list with url errors if happens"""
+
     errors = []
     if not url:
         errors.append('URL обязателен')
@@ -49,6 +62,8 @@ def get_url_errors(url: str) -> list:
 
 
 def normalize_url(url: str) -> str:
+    """Returns normalized URL: https://example.ru"""
+
     parsed_url = urlparse(url)
     return parsed_url._replace(
         path='',
@@ -58,6 +73,20 @@ def normalize_url(url: str) -> str:
     ).geturl()
 
 
+def parse_page(page_text: str) -> dict:
+    """Getting h1, title and description from page content"""
+
+    checks = {}
+    soup = BeautifulSoup(page_text, 'html.parser')
+    checks['h1'] = soup.h1.get_text().strip()
+    checks['title'] = soup.title.string
+    all_metas = soup.find_all('meta')
+    for meta in all_metas:
+        if meta.get('name') == 'description':
+            checks['description'] = meta.get('content')
+    return checks
+
+
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -65,6 +94,8 @@ def index():
 
 @app.get('/urls')
 def get_urls():
+    """Shows all added URLs with last check dates and status codes if any"""
+
     query_db = (
         'SELECT '
         'urls.id AS id, '
@@ -88,8 +119,13 @@ def get_urls():
 
 @app.post('/urls')
 def post_url():
+    """
+    Get new URL, validates the URL.
+    Adds the URL to DB if it isn't there and passed validation.
+    Redirect to url_info.
+    """
     url = request.form.get('url')
-    errors = get_url_errors(url)
+    errors = validate_url(url)
     if errors:
         for error in errors:
             flash(error, 'alert-danger')
@@ -123,6 +159,11 @@ def post_url():
 
 @app.get('/urls/<int:id>')
 def url_info(id):
+    """
+    Shows URL information and made checks
+    :param id: URL's id
+    """
+
     with get_db() as db:
         with db.cursor(cursor_factory=NamedTupleCursor) as cursor:
             cursor.execute('SELECT * FROM urls WHERE id=(%s)', (id,))
@@ -148,15 +189,40 @@ def url_info(id):
 
 @app.post('/url/<int:id>/checks')
 def url_checks(id):
+    """
+    Checks requested URL.
+    If no errors, adds got data to DB.
+    :param id: URL's id
+    :return: redirect to url_info
+    """
+
+    with get_db() as db:
+        with db.cursor(cursor_factory=NamedTupleCursor) as cursor:
+            cursor.execute('SELECT * FROM urls WHERE id=(%s)', (id,))
+            url = cursor.fetchone()
+
+    try:
+        response = requests.get(url.name)
+        response.raise_for_status()
+    except requests.exceptions.RequestException:
+        flash('Произошла ошибка при проверке', 'alert-danger')
+        redirect(url_for('url-info', id=id))
+
+    checks = parse_page(response.text)
+
     with get_db() as db:
         with db.cursor() as cursor:
             cursor.execute(
                 'INSERT INTO url_checks '
-                '(url_id, created_at) '
-                'VALUES (%s, %s)',
-                (id, datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+                '(url_id, status_code, h1, title, description, created_at) '
+                'VALUES (%s, %s, %s, %s, %s, %s)',
+                (id, response.status_code, checks.get('h1'),
+                 checks.get('title'), checks.get('description'),
+                 datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
             )
+            flash('Страница успешно проверена', 'alert-success')
     db.close()
+
     return redirect(url_for('url_info', id=id))
 
 
