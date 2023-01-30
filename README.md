@@ -7,7 +7,7 @@
 Page Analyzer is a full-featured application based on the Flask framework that analyzes specified pages for SEO suitability. Makes HTTP GET request to certain URL, shows status code and content of next tags:
 * h1
 * title
-* meta name="description" content="..."
+* content из \<meta name="description" content="...">
 
 ---
 
