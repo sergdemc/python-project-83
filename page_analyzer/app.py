@@ -78,12 +78,12 @@ def parse_page(page_text: str) -> dict:
 
     checks = {}
     soup = BeautifulSoup(page_text, 'html.parser')
-    checks['h1'] = soup.h1.get_text().strip()
-    checks['title'] = soup.title.string
+    checks['h1'] = soup.h1.get_text().strip() if soup.h1 else ''
+    checks['title'] = soup.title.string if soup.title else ''
     all_metas = soup.find_all('meta')
     for meta in all_metas:
         if meta.get('name') == 'description':
-            checks['description'] = meta.get('content')
+            checks['description'] = meta.get('content', '')
     return checks
 
 
@@ -216,8 +216,8 @@ def url_checks(id):
                 'INSERT INTO url_checks '
                 '(url_id, status_code, h1, title, description, created_at) '
                 'VALUES (%s, %s, %s, %s, %s, %s)',
-                (id, response.status_code, checks.get('h1'),
-                 checks.get('title'), checks.get('description'),
+                (id, response.status_code, checks.get('h1', ''),
+                 checks.get('title', ''), checks.get('description', ''),
                  datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
             )
             flash('Страница успешно проверена', 'alert-success')

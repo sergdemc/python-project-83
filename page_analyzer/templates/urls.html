@@ -25,7 +25,7 @@
             {% for item in items %}
             <tr>
               <td>{{ item.id }}</td>
-              <td>{{ item.name }}</td>
+              <td><a href="{{ url_for('url_info', id=item.id) }}">{{ item.name }}</a></td>
               <td>{{ item.last_check if item.last_check is not none }}</td>
               <td>{{ item.status_code if item.status_code is not none }}</td>
             </tr>
