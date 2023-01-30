@@ -14,12 +14,10 @@ import requests
 
 load_dotenv()
 
-SECRET_KEY = os.getenv('SECRET_KEY')
-DATABASE_URL = os.getenv('DATABASE_URL')
-DEBUG = os.getenv('DEBUG')
-
 app = Flask(__name__)
-app.config.from_object(__name__)
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
+app.config['DATABASE_URL'] = os.getenv('DATABASE_URL')
+app.config['DEBUG'] = os.getenv('DEBUG')
 
 
 def connect_db():
@@ -233,4 +231,4 @@ def close_db(error):
 
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run()
