@@ -22,4 +22,16 @@ selfcheck:
 
 check: selfcheck test lint
 
+all: db-create schema-load
+
+db-create:
+	createdb project83 || echo 'skip'
+
+schema-load:
+	psql database < database.sql
+
+db-reset:
+	dropdb project83 || true
+	createdb project83
+
 .PHONY: install test lint selfcheck check build
