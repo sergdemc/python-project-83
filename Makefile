@@ -28,7 +28,7 @@ db-create:
 	createdb project83 || echo 'skip'
 
 schema-load:
-	psql database < database.sql
+	psql project83 < database.sql
 
 db-reset:
 	dropdb project83 || true
