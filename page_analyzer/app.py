@@ -206,7 +206,7 @@ def url_checks(id):
         response.raise_for_status()
     except requests.exceptions.RequestException:
         flash('Произошла ошибка при проверке', 'alert-danger')
-        redirect(url_for('url-info', id=id))
+        redirect(url_for('url_info', id=id))
 
     checks = parse_page(response.text)
 
