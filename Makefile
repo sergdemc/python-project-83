@@ -30,8 +30,4 @@ db-create:
 schema-load:
 	psql project83 < database.sql
 
-db-reset:
-	dropdb project83 || true
-	createdb project83
-
 .PHONY: install test lint selfcheck check build

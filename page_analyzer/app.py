@@ -1,15 +1,16 @@
 from flask import Flask, render_template, flash, redirect, abort,\
-    url_for, request, g, get_flashed_messages
-from psycopg2.extras import NamedTupleCursor
+    url_for, request, get_flashed_messages
+from collections import namedtuple
 from urllib.parse import urlparse
 from dotenv import load_dotenv
-from datetime import datetime
 from bs4 import BeautifulSoup
 
-import psycopg2
 import validators
 import os
 import requests
+
+from page_analyzer.db import get_all_urls, get_url_by_db_field, post_new_url, \
+    get_checks_by_url_id, add_url_checks
 
 
 load_dotenv()
@@ -18,32 +19,6 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
 app.config['DATABASE_URL'] = os.getenv('DATABASE_URL')
 app.config['DEBUG'] = os.getenv('DEBUG')
-
-
-def connect_db():
-    """Opens DB connection and returns it"""
-
-    conn = psycopg2.connect(app.config['DATABASE_URL'])
-    return conn
-
-
-def create_db():
-    """Additional function for creating tables in DB using database.sql file"""
-
-    with app.app_context():
-        db = connect_db()
-        with app.open_resource('database.sql', mode='r') as sql_file:
-            db.cursor().execute(sql_file.read())
-        db.commit()
-        db.close()
-
-
-def get_db():
-    """Creates DB connection if it hasn't already been made"""
-
-    if not hasattr(g, 'link_db'):
-        g.link_db = connect_db()
-    return g.link_db
 
 
 def validate_url(url: str) -> list:
@@ -94,25 +69,8 @@ def index():
 def get_urls():
     """Shows all added URLs with last check dates and status codes if any"""
 
-    query_db = (
-        'SELECT '
-        'urls.id AS id, '
-        'urls.name AS name, '
-        'url_checks.created_at AS last_check, '
-        'status_code '
-        'FROM urls '
-        'LEFT JOIN url_checks '
-        'ON urls.id = url_checks.url_id '
-        'AND url_checks.id = ('
-        'SELECT max(id) FROM url_checks WHERE urls.id = url_checks.url_id) '
-        'ORDER BY urls.id DESC;'
-    )
-    with get_db() as db:
-        with db.cursor(cursor_factory=NamedTupleCursor) as cursor:
-            cursor.execute(query_db)
-            data = cursor.fetchall()
-    db.close()
-    return render_template('urls.html', items=data)
+    urls: namedtuple = get_all_urls()
+    return render_template('urls.html', items=urls)
 
 
 @app.post('/urls')
@@ -122,8 +80,8 @@ def post_url():
     Adds the URL to DB if it isn't there and passed validation.
     Redirect to url_info.
     """
-    url = request.form.get('url')
-    errors = validate_url(url)
+    url: str = request.form.get('url')
+    errors: list = validate_url(url)
     if errors:
         for error in errors:
             flash(error, 'alert-danger')
@@ -134,24 +92,16 @@ def post_url():
             messages=messages
         ), 422
 
-    url = normalize_url(url)
-    db = get_db()
-    with db.cursor(cursor_factory=NamedTupleCursor) as cursor:
-        cursor.execute('SELECT * FROM urls WHERE name=(%s)', (url,))
-        current_url = cursor.fetchone()
-        if current_url:
-            flash('Страница уже существует', 'alert-info')
-            url_id = current_url.id
-        else:
-            cursor.execute('INSERT INTO urls (name, created_at) '
-                           'VALUES (%s, %s)',
-                           (url, datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
-                           )
-            cursor.execute('SELECT * FROM urls WHERE name=(%s)', (url,))
-            url_id = cursor.fetchone().id
-            flash('Страница успешно добавлена', 'alert-success')
-    db.commit()
-    db.close()
+    url: str = normalize_url(url)
+    current_url: namedtuple = get_url_by_db_field(url)
+    if current_url:
+        flash('Страница уже существует', 'alert-info')
+        url_id = current_url.id
+    else:
+        post_new_url(url)
+        current_url = get_url_by_db_field(url)
+        url_id = current_url.id
+        flash('Страница успешно добавлена', 'alert-success')
     return redirect(url_for('url_info', id=url_id)), 301
 
 
@@ -162,20 +112,11 @@ def url_info(id):
     :param id: URL's id
     """
 
-    with get_db() as db:
-        with db.cursor(cursor_factory=NamedTupleCursor) as cursor:
-            cursor.execute('SELECT * FROM urls WHERE id=(%s)', (id,))
-            url = cursor.fetchone()
-            if not url:
-                abort(404)
+    url: namedtuple = get_url_by_db_field(id)
+    if not url:
+        abort(404)
 
-            cursor.execute('SELECT * '
-                           'FROM url_checks '
-                           'WHERE url_id=(%s) '
-                           'ORDER BY id DESC', (id,))
-            checks = cursor.fetchall()
-
-    db.close()
+    checks: namedtuple = get_checks_by_url_id(id)
     messages = get_flashed_messages(with_categories=True)
     return render_template(
         'url_info.html',
@@ -194,10 +135,7 @@ def url_checks(id):
     :return: redirect to url_info
     """
 
-    with get_db() as db:
-        with db.cursor(cursor_factory=NamedTupleCursor) as cursor:
-            cursor.execute('SELECT * FROM urls WHERE id=(%s)', (id,))
-            url = cursor.fetchone()
+    url: namedtuple = get_url_by_db_field(id)
 
     try:
         response = requests.get(url.name)
@@ -206,28 +144,15 @@ def url_checks(id):
         flash('Произошла ошибка при проверке', 'alert-danger')
         return redirect(url_for('url_info', id=id))
 
-    checks = parse_page(response.text)
+    checks: dict = parse_page(response.text)
+    checks['url_id'] = id
+    checks['status_code'] = response.status_code
 
-    with get_db() as db:
-        with db.cursor() as cursor:
-            cursor.execute(
-                'INSERT INTO url_checks '
-                '(url_id, status_code, h1, title, description, created_at) '
-                'VALUES (%s, %s, %s, %s, %s, %s)',
-                (id, response.status_code, checks.get('h1', ''),
-                 checks.get('title', ''), checks.get('description', ''),
-                 datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
-            )
-            flash('Страница успешно проверена', 'alert-success')
-    db.close()
+    add_url_checks(checks)
+
+    flash('Страница успешно проверена', 'alert-success')
 
     return redirect(url_for('url_info', id=id))
-
-
-@app.teardown_appcontext
-def close_db(error):
-    if hasattr(g, 'link_db'):
-        g.link_db.close()
 
 
 if __name__ == '__main__':
